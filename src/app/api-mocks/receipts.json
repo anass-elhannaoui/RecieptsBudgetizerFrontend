@@ -1,0 +1,7 @@
+{
+  "receipts": [
+    { "id": "rct-1001", "store": "Fresh Mart", "total": 142.34 },
+    { "id": "rct-1002", "store": "Blue Diner", "total": 62.15 },
+    { "id": "rct-1003", "store": "Metro Transit", "total": 45.5 }
+  ]
+}
