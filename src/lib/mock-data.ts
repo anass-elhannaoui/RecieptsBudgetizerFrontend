@@ -385,4 +385,24 @@ export const parsedUploadReceipt: ParsedReceipt = {
   categorySuggestions: ["Groceries", "Snacks"],
   status: "processed",
   anomalyFlags: [],
+  rawText:
+    "Corner Market\nJan 18 2025\nBread 3.50\nMilk 4.20\nTotal 54.22",
+  items: [
+    {
+      id: "itm-1",
+      description: "Bread",
+      quantity: 1,
+      unitPrice: 3.50,
+      total: 3.50,
+      categoryId: "groceries",
+    },
+    {
+      id: "itm-2",
+      description: "Milk",
+      quantity: 1,
+      unitPrice: 4.20,
+      total: 4.20,
+      categoryId: "groceries",
+    },
+  ],
 };

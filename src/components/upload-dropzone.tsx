@@ -7,6 +7,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Card, CardDescription, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
 
 export function UploadDropzone({
   onComplete,
@@ -120,20 +121,141 @@ export function UploadDropzone({
   );
 }
 
-export function UploadedReceiptPreview({ receipt }: { receipt: ParsedReceipt }) {
+export function UploadedReceiptPreview({ 
+  receipt,
+  onSave,
+}: { 
+  receipt: ParsedReceipt;
+  onSave?: (editedReceipt: ParsedReceipt) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(true);
+  const [editedReceipt, setEditedReceipt] = useState<ParsedReceipt>(receipt);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    // Here you would save to database
+    // For now, just call the onSave callback
+    if (onSave) {
+      onSave(editedReceipt);
+    }
+    setIsEditing(false);
+    setIsSaving(false);
+  };
+
   return (
     <Card className="p-4">
-      <CardTitle className="mb-1">Parsed receipt</CardTitle>
-      <CardDescription className="mb-3">Mocked OCR result</CardDescription>
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <Detail label="Store" value={receipt.store} />
-        <Detail label="Date" value={receipt.date} />
-        <Detail label="Total" value={formatCurrency(receipt.total)} />
-        <Detail label="Tax" value={formatCurrency(receipt.tax)} />
-        <Detail label="Status" value={receipt.status} />
-        <Detail label="Categories" value={receipt.categorySuggestions.join(", ")} />
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <CardTitle className="mb-1">Parsed Receipt</CardTitle>
+          <CardDescription>Review and edit extracted data</CardDescription>
+        </div>
+        {isEditing ? (
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleSave} loading={isSaving}>
+              Save to Database
+            </Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)}>
+            Edit
+          </Button>
+        )}
       </div>
+
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <EditableField
+          label="Store"
+          value={editedReceipt.store}
+          isEditing={isEditing}
+          onChange={(value) => setEditedReceipt({ ...editedReceipt, store: value })}
+        />
+        <EditableField
+          label="Date"
+          value={editedReceipt.date}
+          isEditing={isEditing}
+          type="date"
+          onChange={(value) => setEditedReceipt({ ...editedReceipt, date: value })}
+        />
+        <EditableField
+          label="Total"
+          value={editedReceipt.total.toString()}
+          isEditing={isEditing}
+          type="number"
+          prefix="$"
+          onChange={(value) => setEditedReceipt({ ...editedReceipt, total: parseFloat(value) || 0 })}
+        />
+        <EditableField
+          label="Tax"
+          value={editedReceipt.tax.toString()}
+          isEditing={isEditing}
+          type="number"
+          prefix="$"
+          onChange={(value) => setEditedReceipt({ ...editedReceipt, tax: parseFloat(value) || 0 })}
+        />
+        <Detail label="Status" value={editedReceipt.status} />
+        <Detail label="Categories" value={editedReceipt.categorySuggestions.join(", ")} />
+      </div>
+
+      {editedReceipt.items && editedReceipt.items.length > 0 && (
+        <div className="mt-4">
+          <span className="text-xs uppercase tracking-wide text-slate-500 mb-2 block">Line Items ({editedReceipt.items.length})</span>
+          <div className="rounded-lg bg-slate-50 p-3 space-y-2">
+            {editedReceipt.items.map((item, index) => (
+              <div key={item.id} className="flex justify-between items-start text-sm border-b border-slate-200 last:border-b-0 pb-2 last:pb-0">
+                <div className="flex-1">
+                  <span className="font-medium text-slate-900">{item.description}</span>
+                  <span className="text-slate-500 text-xs ml-2">×{item.quantity}</span>
+                </div>
+                <span className="font-semibold text-slate-900 ml-2">{formatCurrency(item.total)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {receipt.rawText && (
+        <div className="mt-4">
+          <span className="text-xs uppercase tracking-wide text-slate-500">Raw OCR Text</span>
+          <div className="mt-2 max-h-32 overflow-y-auto rounded-lg bg-slate-50 p-3 text-xs font-mono text-slate-700 whitespace-pre-wrap">
+            {receipt.rawText}
+          </div>
+        </div>
+      )}
     </Card>
+  );
+}
+
+function EditableField({
+  label,
+  value,
+  isEditing,
+  type = "text",
+  prefix,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  isEditing: boolean;
+  type?: "text" | "number" | "date";
+  prefix?: string;
+  onChange: (value: string) => void;
+}) {
+  if (!isEditing) {
+    const displayValue = type === "number" && prefix ? `${prefix}${parseFloat(value).toFixed(2)}` : value;
+    return <Detail label={label} value={displayValue} />;
+  }
+
+  return (
+    <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
+      <span className="text-xs uppercase tracking-wide text-slate-500">{label}</span>
+      <Input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8 text-sm font-semibold"
+      />
+    </div>
   );
 }
 

@@ -94,6 +94,8 @@ export interface ParsedReceipt {
   categorySuggestions: string[];
   status: ReceiptStatus;
   anomalyFlags: AnomalyFlag[];
+  rawText: string;
+  items: ReceiptItem[];
 }
 
 export interface UploadResult {
