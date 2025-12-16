@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { LayoutDashboard, ScanLine, Receipt, Wallet, TrendingUp, Menu, X } from "lucide-react";
 import { classNames } from "@/lib/utils";
 
 const links = [
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/scan", label: "Scan / Upload", icon: "📸" },
-  { href: "/receipts", label: "Receipts", icon: "🧾" },
-  { href: "/budgets", label: "Budgets", icon: "💰" },
-  { href: "/weekly-report", label: "Weekly Report", icon: "📈" },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/scan", label: "Scan / Upload", icon: ScanLine },
+  { href: "/receipts", label: "Receipts", icon: Receipt },
+  { href: "/budgets", label: "Budgets", icon: Wallet },
+  { href: "/weekly-report", label: "Weekly Report", icon: TrendingUp },
 ];
 
 export function Sidebar() {
@@ -25,7 +26,7 @@ export function Sidebar() {
         className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-sky-600 text-white shadow-lg lg:hidden"
         aria-label="Toggle menu"
       >
-        {mobileOpen ? "×" : "☰"}
+        {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
       </button>
 
       {/* Mobile backdrop */}
@@ -50,6 +51,7 @@ export function Sidebar() {
           <div className="flex flex-col gap-1">
           {links.map((link) => {
             const active = pathname === link.href;
+            const IconComponent = link.icon;
             return (
               <Link
                 key={link.href}
@@ -63,7 +65,7 @@ export function Sidebar() {
                 )}
               >
                 <span className="flex items-center gap-2">
-                  <span>{link.icon}</span>
+                  <IconComponent className="w-4 h-4" />
                   <span>{link.label}</span>
                 </span>
                 {active && <span className="text-xs text-sky-600">●</span>}
@@ -83,6 +85,7 @@ export function Sidebar() {
           <div className="flex flex-col gap-1">
             {links.map((link) => {
               const active = pathname === link.href;
+              const IconComponent = link.icon;
               return (
                 <Link
                   key={link.href}
@@ -95,7 +98,7 @@ export function Sidebar() {
                   )}
                 >
                   <span className="flex items-center gap-2">
-                    <span>{link.icon}</span>
+                    <IconComponent className="w-4 h-4" />
                     <span>{link.label}</span>
                   </span>
                   {active && <span className="text-xs text-sky-600">●</span>}

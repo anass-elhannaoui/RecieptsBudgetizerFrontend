@@ -12,6 +12,7 @@ export interface Category {
   name: string;
   icon?: string;
   color?: string;
+  description?: string;
 }
 
 export type ReceiptStatus = "processed" | "pending" | "flagged";
@@ -29,7 +30,7 @@ export interface Receipt {
   id: string;
   store: string;
   date: string;
-  categoryId: string;
+  categoryId: string; // DEPRECATED: Receipts don't have categories. This field exists only for backwards compatibility. Use item.categoryId instead.
   total: number;
   tax: number;
   status: ReceiptStatus;
@@ -95,6 +96,7 @@ export interface ParsedReceipt {
   status: ReceiptStatus;
   anomalyFlags: AnomalyFlag[];
   rawText: string;
+  confidence?: number;
   items: ReceiptItem[];
 }
 

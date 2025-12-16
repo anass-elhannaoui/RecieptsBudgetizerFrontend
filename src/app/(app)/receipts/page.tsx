@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Receipt as ReceiptIcon, Filter, Calendar } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
-import { getCategories, getReceipts } from "@/lib/api-client";
+import { getCategories, getReceipts, deleteReceipt } from "@/lib/api-client";
 import { Category, Receipt } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ export default function ReceiptsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -28,20 +30,38 @@ export default function ReceiptsPage() {
   const [anomalyOnly, setAnomalyOnly] = useState(false);
   const [page, setPage] = useState(1);
 
+  const loadReceipts = async () => {
+    try {
+      const [rcpts, cats] = await Promise.all([getReceipts(), getCategories()]);
+      setReceipts(rcpts);
+      setCategories(cats);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [rcpts, cats] = await Promise.all([getReceipts(), getCategories()]);
-        setReceipts(rcpts);
-        setCategories(cats);
-      } catch (err) {
-        setError((err as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    loadReceipts();
   }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this receipt? This action cannot be undone.")) {
+      return;
+    }
+
+    setDeletingId(id);
+    const result = await deleteReceipt(id);
+    setDeletingId(null);
+
+    if (result.success) {
+      // Remove from local state
+      setReceipts(receipts.filter(r => r.id !== id));
+    } else {
+      alert(result.message);
+    }
+  };
 
   const filtered = useMemo(() => {
     return receipts.filter((r) => {
@@ -77,8 +97,13 @@ export default function ReceiptsPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold text-slate-900">Receipts</h1>
-        <p className="text-slate-600">Filter and review your uploaded receipts.</p>
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-sky-100 text-sky-600">
+            <ReceiptIcon className="w-5 h-5" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900">Receipts</h1>
+        </div>
+        <p className="text-slate-600 ml-[52px]">Filter and review your uploaded receipts.</p>
       </div>
 
       <Card className="p-4">
@@ -111,7 +136,6 @@ export default function ReceiptsPage() {
             <TR>
               <TH>Date</TH>
               <TH>Store</TH>
-              <TH>Category</TH>
               <TH>Status</TH>
               <TH className="text-right">Total</TH>
               <TH className="text-right">Tax</TH>
@@ -122,9 +146,8 @@ export default function ReceiptsPage() {
           <TBody>
             {pageData.map((r) => (
               <TR key={r.id}>
-                <TD>{formatDate(r.date)}</TD>
-                <TD className="font-semibold text-slate-900">{r.store}</TD>
-                <TD className="capitalize text-slate-600">{r.categoryId}</TD>
+                <TD className="whitespace-nowrap">{formatDate(r.date)}</TD>
+                <TD className="font-medium text-slate-900">{r.store}</TD>
                 <TD>
                   <Badge tone={r.status === "flagged" ? "warning" : "info"}>{r.status}</Badge>
                 </TD>
@@ -134,12 +157,21 @@ export default function ReceiptsPage() {
                   {r.anomalyFlags.length ? <Badge tone="warning">Yes</Badge> : <Badge tone="success">No</Badge>}
                 </TD>
                 <TD className="text-center">
-                  <Link
-                    href={`/receipts/${r.id}`}
-                    className="text-sm font-semibold text-sky-600 hover:text-sky-700"
-                  >
-                    View
-                  </Link>
+                  <div className="flex items-center justify-center gap-2">
+                    <Link
+                      href={`/receipts/${r.id}`}
+                      className="text-sm font-semibold text-sky-600 hover:text-sky-700 hover:underline"
+                    >
+                      View
+                    </Link>
+                    <button
+                      onClick={() => handleDelete(r.id)}
+                      disabled={deletingId === r.id}
+                      className="text-sm font-semibold text-red-600 hover:text-red-700 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {deletingId === r.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
                 </TD>
               </TR>
             ))}

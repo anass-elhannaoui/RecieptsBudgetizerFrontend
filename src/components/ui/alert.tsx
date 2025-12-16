@@ -18,7 +18,7 @@ export function Alert({
   className,
 }: {
   tone?: Tone;
-  title: string;
+  title: string | ReactNode;
   description?: string;
   actions?: ReactNode;
   className?: string;
@@ -32,9 +32,9 @@ export function Alert({
       )}
     >
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="flex-1">
           <p className="font-semibold">{title}</p>
-          {description && <p className="text-sm text-inherit/80">{description}</p>}
+          {description && <p className="text-sm text-inherit/80 whitespace-pre-line">{description}</p>}
         </div>
         {actions}
       </div>

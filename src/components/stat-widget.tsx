@@ -21,13 +21,20 @@ export function StatWidget({
     danger: "text-rose-600",
   } as const;
 
+  const toneBg: Record<typeof tone, string> = {
+    info: "bg-sky-50 text-sky-600",
+    success: "bg-emerald-50 text-emerald-600",
+    warning: "bg-amber-50 text-amber-600",
+    danger: "bg-rose-50 text-rose-600",
+  } as const;
+
   return (
-    <Card className="flex h-full flex-col gap-3 p-4">
+    <Card className="flex h-full flex-col gap-3 p-4 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between">
         <CardDescription className="font-semibold uppercase tracking-wide text-[11px] text-slate-500">
           {label}
         </CardDescription>
-        {icon && <span className="text-xl text-slate-400">{icon}</span>}
+        {icon && <div className={`p-2 rounded-lg ${toneBg[tone]}`}>{icon}</div>}
       </div>
       <CardTitle className="text-3xl font-bold text-slate-900">{value}</CardTitle>
       {delta && <span className={`text-sm font-medium ${toneColor[tone]}`}>{delta}</span>}
