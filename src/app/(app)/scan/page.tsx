@@ -24,7 +24,7 @@ export default function ScanPage() {
           </div>
           <h1 className="text-3xl font-bold text-slate-900">Receipt Scanner</h1>
         </div>
-        <p className="text-slate-600 ml-[52px]">Upload and extract receipt data using OCR technology. Choose between regex-based or AI-powered parsing.</p>
+        <p className="text-slate-600 ml-[52px]">Upload and extract receipt data using AI-powered OCR technology.</p>
       </div>
 
       <UploadDropzone 

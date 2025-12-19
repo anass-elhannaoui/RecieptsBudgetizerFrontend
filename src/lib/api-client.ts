@@ -12,6 +12,7 @@ import {
   WeeklyHighlight,
   Category,
   AnomalyFlag,
+  AIValidationFlag,
 } from "./types";
 
 // Import mocks for the parts we aren't changing yet
@@ -62,6 +63,66 @@ export async function getCurrentUser(): Promise<User> {
 }
 
 // --- CORE: SCANNING (REAL FLASK BACKEND) ---
+
+// AI validation for extracted receipt items
+async function validateItemWithAI(item: ReceiptItem, receiptTotal: number, allItems: ReceiptItem[]): Promise<{
+  flags: AIValidationFlag[];
+  confidence: number;
+}> {
+  const flags: AIValidationFlag[] = [];
+  let confidence = 1.0;
+
+  // 1. Check for suspicious prices (negative, zero, or extremely high)
+  if (item.unitPrice <= 0 || item.total <= 0) {
+    flags.push("price_suspicious");
+    confidence -= 0.3;
+  } else if (item.unitPrice > 10000 || item.total > 10000) {
+    flags.push("price_suspicious");
+    confidence -= 0.2;
+  }
+
+  // 2. Check for unusual quantities (0, negative, or extremely high)
+  if (item.quantity <= 0) {
+    flags.push("quantity_unusual");
+    confidence -= 0.3;
+  } else if (item.quantity > 100) {
+    flags.push("quantity_unusual");
+    confidence -= 0.2;
+  }
+
+  // 3. Check for unclear descriptions (too short, just numbers, or placeholder text)
+  const desc = item.description.trim();
+  if (desc.length < 2) {
+    flags.push("description_unclear");
+    confidence -= 0.3;
+  } else if (/^[\d\s\-_]+$/.test(desc)) {
+    flags.push("description_unclear");
+    confidence -= 0.2;
+  } else if (/(unknown|placeholder|test|item \d+)/i.test(desc)) {
+    flags.push("description_unclear");
+    confidence -= 0.2;
+  }
+
+  // 4. Check for total calculation errors
+  const expectedTotal = Math.round(item.quantity * item.unitPrice * 100) / 100;
+  const actualTotal = Math.round(item.total * 100) / 100;
+  const tolerance = 0.02; // 2 cents tolerance
+  if (Math.abs(expectedTotal - actualTotal) > tolerance) {
+    flags.push("total_calculation_error");
+    confidence -= 0.2;
+  }
+
+  // 5. Check if item total is suspiciously close to receipt total (likely parsing error)
+  if (allItems.length > 1 && Math.abs(item.total - receiptTotal) < 0.01) {
+    flags.push("price_suspicious");
+    confidence -= 0.3;
+  }
+
+  // Ensure confidence stays in range [0, 1]
+  confidence = Math.max(0, Math.min(1, confidence));
+
+  return { flags, confidence };
+}
 
 // Upload with OpenAI parsing
 export async function uploadReceiptWithAI(
@@ -114,6 +175,7 @@ export async function uploadReceiptWithAI(
     console.log("AI Backend response:", data);
     console.log("AI raw_text:", data.raw_text ? `${data.raw_text.length} chars` : "MISSING");
     console.log("AI confidence:", data.confidence);
+    console.log("AI ocr_data:", data.ocr_data ? `${data.ocr_data.length} regions` : "MISSING");
     
     // Validate minimum required fields
     if (!data.store && !data.total && (!data.items || data.items.length === 0)) {
@@ -137,6 +199,22 @@ export async function uploadReceiptWithAI(
       };
     });
 
+    // Step 3.5: 🤖 AI VALIDATION - Flag suspicious items
+    const validatedItems: ReceiptItem[] = [];
+    const receiptTotal = data.total || 0;
+    for (const item of transformedItems) {
+      const validation = await validateItemWithAI(item, receiptTotal, transformedItems);
+      validatedItems.push({
+        ...item,
+        aiValidationFlags: validation.flags,
+        aiConfidence: validation.confidence,
+      });
+      
+      if (validation.flags.length > 0) {
+        console.log(`⚠️ AI flagged item "${item.description}":`, validation.flags, `(confidence: ${validation.confidence.toFixed(2)})`);
+      }
+    }
+
     // Step 4: Create receipt object with transformed items
     const receipt: ParsedReceipt = {
       id: `temp-${Date.now()}`,
@@ -144,15 +222,17 @@ export async function uploadReceiptWithAI(
       date: data.date || new Date().toISOString().split("T")[0],
       total: data.total || 0,
       tax: data.tax || 0,
-      items: transformedItems,
+      items: validatedItems,
       rawText: data.raw_text || "",
       confidence: data.confidence,
       categorySuggestions: data.categories || ["Uncategorized"],
       status: "processed",
       anomalyFlags: [],
+      ocr_data: data.ocr_data || [], // ⭐ Include PaddleOCR bounding boxes
     };
 
     console.log(`✅ AI parsing complete: ${data.store} - $${data.total} (${transformedItems.length} items)`);
+    console.log(`📦 OCR data included: ${receipt.ocr_data.length} regions`);
 
     return {
       receipt,
@@ -493,6 +573,21 @@ export async function uploadReceipt(
       }
     }
 
+    // 🤖 AI VALIDATION: Flag suspicious items in regex-parsed receipts
+    const validatedItems: ReceiptItem[] = [];
+    for (const item of items) {
+      const validation = await validateItemWithAI(item, total, items);
+      validatedItems.push({
+        ...item,
+        aiValidationFlags: validation.flags,
+        aiConfidence: validation.confidence,
+      });
+      
+      if (validation.flags.length > 0) {
+        console.log(`⚠️ AI flagged item "${item.description}":`, validation.flags, `(confidence: ${validation.confidence.toFixed(2)})`);
+      }
+    }
+
     // Return parsed receipt WITHOUT saving to database
     const receipt: ParsedReceipt = {
       id: `temp-${Date.now()}`,
@@ -505,7 +600,7 @@ export async function uploadReceipt(
       anomalyFlags: [],
       rawText: rawText,
       confidence: data.confidence,
-      items: items,
+      items: validatedItems,
     };
 
     return {
@@ -610,6 +705,7 @@ export async function saveReceiptToDatabase(
       tax_amount: receipt.tax,
       confidence_score: receipt.confidence || 0.85,
       ocr_raw_text: receipt.rawText,
+      ocr_data: receipt.ocr_data || null, // ⭐ NEW: Store bounding box data
       status: "completed",
       anomalies: [], // Will be populated below
     };
@@ -716,16 +812,18 @@ export async function saveReceiptToDatabase(
     // Insert receipt items
     if (receipt.items && receipt.items.length > 0) {
       const itemsToInsert = receipt.items.map((item) => {
-        const itemData = {
+        const itemData: any = {
           receipt_id: finalReceiptId,
           description: item.description,
           quantity: item.quantity,
           unit_price: item.unitPrice,
           total_price: item.total,
-          category_id: item.categoryId || null // Use null if no category
+          category_id: item.categoryId || null, // Use null if no category
+          ai_validation_flags: item.aiValidationFlags || [],
+          ai_confidence: item.aiConfidence !== undefined ? item.aiConfidence : null,
         };
         
-        console.log(`📦 Preparing item: "${item.description}" | Category: ${item.categoryId || 'NONE'} | Price: $${item.total}`);
+        console.log(`📦 Preparing item: "${item.description}" | Category: ${item.categoryId || 'NONE'} | Price: $${item.total} | AI Flags: ${item.aiValidationFlags?.length || 0}`);
         return itemData;
       });
 
@@ -794,6 +892,7 @@ export async function getReceipts(): Promise<Receipt[]> {
       ocrConfidence: r.confidence_score || 0,
       rawText: r.ocr_raw_text || "",
       items: [],
+      ocr_data: r.ocr_data || null, // ⭐ Include bounding box data
     }));
   } catch (err) {
     console.error("Error fetching receipts:", err);
@@ -890,6 +989,8 @@ export async function getReceiptById(id: string): Promise<Receipt> {
       unitPrice: Number(item.unit_price) || 0,
       total: Number(item.total_price) || 0,
       categoryId: item.category_id || "uncategorized",
+      aiValidationFlags: item.ai_validation_flags || [],
+      aiConfidence: item.ai_confidence !== null ? Number(item.ai_confidence) : undefined,
     }));
 
     // Generate signed URL for image (valid for 1 hour)
@@ -923,6 +1024,7 @@ export async function getReceiptById(id: string): Promise<Receipt> {
       ocrConfidence: data.confidence_score,
       rawText: data.ocr_raw_text,
       items: items,
+      ocr_data: data.ocr_data || null, // ⭐ Retrieve bounding box data
     };
   } catch (err) {
     // If not found in DB, check mock data

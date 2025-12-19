@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, TrendingUp, AlertTriangle, Receipt as ReceiptIcon, Check, Download, BarChart3 } from "lucide-react";
+import { Copy, TrendingUp, AlertTriangle, Receipt as ReceiptIcon, Check, Download, BarChart3, ExternalLink } from "lucide-react";
 import { WeeklyReportSummary } from "@/components/weekly-report-summary";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { getWeeklyReport } from "@/lib/api-client";
 import { WeeklyReport } from "@/lib/types";
 import { downloadCsv, formatCurrency, formatDate } from "@/lib/utils";
+import Link from "next/link";
 
 export default function WeeklyReportPage() {
   const [report, setReport] = useState<WeeklyReport | null>(null);
@@ -83,6 +84,7 @@ export default function WeeklyReportPage() {
               <TH>Store</TH>
               <TH className="text-right">Total</TH>
               <TH className="text-center">Anomalies</TH>
+              <TH className="text-center">Action</TH>
             </TR>
           </THead>
           <TBody>
@@ -108,6 +110,15 @@ export default function WeeklyReportPage() {
                       <Check className="w-3 h-3" /> OK
                     </Badge>
                   )}
+                </TD>
+                <TD className="text-center">
+                  <Link 
+                    href={`/receipts/${r.id}`}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-600 hover:text-sky-700 hover:underline"
+                  >
+                    View Receipt
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </Link>
                 </TD>
               </TR>
             ))}

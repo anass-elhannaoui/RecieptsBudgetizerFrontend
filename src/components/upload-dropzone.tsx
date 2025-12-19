@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { Sparkles, RefreshCw, AlertTriangle, FileText, Save, Lightbulb, X, Edit } from "lucide-react";
-import { uploadReceipt, uploadReceiptWithAI, saveReceiptToDatabase, getCategories } from "@/lib/api-client";
+import { RefreshCw, AlertTriangle, Save, Lightbulb, X, Edit, Upload, CheckCircle, FileText } from "lucide-react";
+import { uploadReceiptWithAI, saveReceiptToDatabase, getCategories } from "@/lib/api-client";
 import { ParsedReceipt, Category } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { Alert } from "./ui/alert";
@@ -10,6 +10,7 @@ import { Button } from "./ui/button";
 import { Card, CardDescription, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Select } from "./ui/select";
+import { BoundingBoxCanvas } from "./bounding-box-canvas";
 
 export function UploadDropzone({
   onComplete,
@@ -24,7 +25,6 @@ export function UploadDropzone({
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
-  const [parseMode, setParseMode] = useState<"regex" | "ai">("regex");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const handleSelect = (file: File) => {
@@ -49,7 +49,7 @@ export function UploadDropzone({
     }
   };
 
-  const handleUpload = async (mode: "regex" | "ai") => {
+  const handleUpload = async () => {
     if (!selectedFile) {
       setMessage("Please select a file first.");
       setStatus("error");
@@ -57,7 +57,6 @@ export function UploadDropzone({
     }
     setStatus("uploading");
     setProgress(10);
-    setParseMode(mode);
     setMessage(null);
     
     try {
@@ -65,30 +64,53 @@ export function UploadDropzone({
         setProgress((p) => Math.min(p + 15, 90));
       }, 200);
       
-      const result = mode === "ai" 
-        ? await uploadReceiptWithAI(selectedFile)
-        : await uploadReceipt(selectedFile);
+      const result = await uploadReceiptWithAI(selectedFile);
       
       clearInterval(timer);
       setProgress(100);
       setStatus("success");
-      setMessage(mode === "ai" ? "AI parsing complete!" : "Regex parsing complete!");
+      setMessage("Receipt data extracted successfully!");
       onComplete(result.receipt, selectedFile);
     } catch (error) {
       setStatus("error");
+      setProgress(0);
       const errorMsg = (error as Error).message;
       
-      // Enhance error messages with helpful tips
-      if (errorMsg.includes("quality too poor") || errorMsg.includes("confidence")) {
-        setMessage(`${errorMsg}\n\nTips:\n• Use better lighting\n• Hold camera steady\n• Ensure receipt is flat\n• Try taking photo from directly above`);
-      } else if (errorMsg.includes("unreadable") || errorMsg.includes("clearer image")) {
-        setMessage(`${errorMsg}\n\nTry:\n• Cleaning the receipt if dirty\n• Smoothing out wrinkles\n• Taking a new photo in bright light\n• Using the regex parser instead (slower but works on poor quality)`);
-      } else if (errorMsg.includes("Unable to extract")) {
-        setMessage(`${errorMsg}\n\nThis might help:\n• Verify it's a receipt (not other document)\n• Check the image isn't blurry\n• Try the regex parser as backup`);
-      } else {
-        setMessage(errorMsg);
+      // Detect connection/backend errors
+      if (errorMsg.includes("Failed to fetch") || 
+          errorMsg.includes("NetworkError") || 
+          errorMsg.includes("ERR_CONNECTION") ||
+          errorMsg.includes("ECONNREFUSED") ||
+          error instanceof TypeError && errorMsg.includes("fetch")) {
+        setMessage("Unable to connect to the processing service.\n\n⏳ The service may be temporarily unavailable.\n\nPlease try again in a few moments. If the problem persists, contact support.");
       }
-      setProgress(0);
+      // Backend returned error response
+      else if (errorMsg.includes("500") || errorMsg.includes("Internal Server Error")) {
+        setMessage("An error occurred while processing your receipt.\n\n⏳ Our system is experiencing technical difficulties.\n\nPlease try again shortly. If the issue continues, contact our support team.");
+      }
+      // Image quality issues
+      else if (errorMsg.includes("quality too poor") || errorMsg.includes("confidence") || errorMsg.includes("Low confidence")) {
+        setMessage("We couldn't read your receipt clearly.\n\n💡 To get better results:\n• Take the photo in good lighting\n• Make sure the receipt is flat and straight\n• Hold your phone steady\n• Ensure all text is visible and in focus");
+      } 
+      else if (errorMsg.includes("unreadable") || errorMsg.includes("clearer image") || errorMsg.includes("blurry")) {
+        setMessage("The receipt text is too faint or unclear to read.\n\n💡 Please try:\n• Using better lighting or natural light\n• Cleaning any smudges from the receipt\n• Taking a new photo with a steady hand\n• Making sure the text is sharp and readable");
+      } 
+      else if (errorMsg.includes("Unable to extract") || errorMsg.includes("no text detected") || errorMsg.includes("no data found")) {
+        setMessage("We couldn't find any receipt data in this image.\n\n💡 Please check that:\n• You've uploaded a receipt (not another document)\n• The receipt is fully visible in the photo\n• The image isn't rotated or upside down\n• The file format is JPG or PNG");
+      }
+      // Timeout errors
+      else if (errorMsg.includes("timeout") || errorMsg.includes("timed out")) {
+        setMessage("Processing is taking longer than expected.\n\n⏳ This may be due to high server load.\n\nPlease try again in a moment. Consider using a smaller or clearer image.");
+      }
+      // Generic/unknown errors
+      else {
+        setMessage("We couldn't process your receipt at this time.\n\n💡 What you can do:\n• Verify the image is clear and well-lit\n• Try uploading a different photo\n• Contact support if the problem continues\n\nError details have been logged for our team.");
+      }
+      
+      // Log technical error details for debugging (won't be shown to user)
+      console.error("Receipt parsing error:", errorMsg);
+      
+      // DO NOT call onComplete on error - prevents showing artificial data
     }
   };
 
@@ -107,7 +129,7 @@ export function UploadDropzone({
     <Card className="p-6">
       <div className="mb-4">
         <CardTitle className="text-xl mb-2">Upload Receipt</CardTitle>
-        <CardDescription>Select a receipt image to extract data. You can use regex-based or AI-powered parsing.</CardDescription>
+        <CardDescription>Select a receipt image to extract data using AI-powered parsing.</CardDescription>
       </div>
 
       <div className="space-y-4">
@@ -156,9 +178,9 @@ export function UploadDropzone({
             selectedFile ? "bg-emerald-100 text-emerald-600" : "bg-sky-100 text-sky-600"
           } text-2xl transition-all`}>
             {selectedFile ? (
-              <Sparkles className="w-8 h-8" />
+              <CheckCircle className="w-8 h-8" />
             ) : (
-              <RefreshCw className="w-8 h-8" />
+              <Upload className="w-8 h-8" />
             )}
           </div>
           
@@ -179,8 +201,8 @@ export function UploadDropzone({
                   style={{ width: `${progress}%` }}
                 />
               </div>
-              <p className="text-xs text-slate-600 mt-2">
-                {parseMode === "ai" ? "AI parsing in progress..." : "Regex parsing in progress..."}
+              <p className="text-xs text-slate-600 mt-2 font-medium">
+                Analyzing receipt with AI...
               </p>
             </div>
           )}
@@ -189,24 +211,13 @@ export function UploadDropzone({
         {/* Action Buttons */}
         <div className="flex items-center justify-center gap-3 flex-wrap">
           <Button 
-            onClick={() => handleUpload("regex")} 
+            onClick={handleUpload} 
             disabled={status === "uploading" || !selectedFile} 
-            loading={status === "uploading" && parseMode === "regex"}
-            className="px-6 flex items-center gap-2"
-            title="Parse with Regex"
+            loading={status === "uploading"}
+            className="px-10 text-base py-6 font-semibold"
+            title="Extract receipt data"
           >
-            <FileText className="w-4 h-4" />
-            Regex Parser
-          </Button>
-          <Button 
-            onClick={() => handleUpload("ai")} 
-            disabled={status === "uploading" || !selectedFile} 
-            loading={status === "uploading" && parseMode === "ai"}
-            className="px-6 flex items-center gap-2"
-            title="Parse with AI"
-          >
-            <Sparkles className="w-4 h-4" />
-            AI Parser
+            {status === "uploading" ? "Processing..." : "Extract Data"}
           </Button>
           {selectedFile && (
             <Button 
@@ -253,6 +264,18 @@ export function UploadedReceiptPreview({
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
   const [showRawText, setShowRawText] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+
+  // Create image preview URL
+  useEffect(() => {
+    if (imageFile) {
+      const url = URL.createObjectURL(imageFile);
+      setImagePreviewUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    }
+  }, [imageFile]);
 
   // Fetch categories on mount
   useEffect(() => {
@@ -308,6 +331,24 @@ export function UploadedReceiptPreview({
 
   return (
     <Card className="p-6">
+      {/* Receipt Image with Bounding Boxes */}
+      {/* Only show bounding box canvas if OCR data exists */}
+      {imagePreviewUrl && receipt.ocr_data && receipt.ocr_data.length > 0 && (
+        <div className="mb-6">
+          <CardTitle className="text-lg mb-3">OCR Detection Quality</CardTitle>
+          <div className="rounded-lg overflow-auto border-2 border-slate-200 bg-slate-50">
+            <BoundingBoxCanvas
+              imageUrl={imagePreviewUrl}
+              ocrData={receipt.ocr_data}
+              className="w-full"
+            />
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            <span className="font-medium">💡 Tip:</span> Hover over boxes to see detected text • Toggle visibility with the eye button
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <CardTitle className="text-xl mb-2">Extracted Data</CardTitle>
@@ -389,117 +430,147 @@ export function UploadedReceiptPreview({
               Line Items ({editedReceipt.items.length})
             </h3>
           </div>
-          <div className="rounded-lg border border-slate-200 overflow-hidden">
-            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 grid grid-cols-12 gap-2 text-xs font-semibold text-slate-600 uppercase">
-              <div className="col-span-4">Item</div>
-              <div className="col-span-1 text-center">Qty</div>
-              <div className="col-span-2 text-right">Unit</div>
-              <div className="col-span-2 text-right">Total</div>
-              <div className="col-span-3">Category</div>
-            </div>
-            <div className="divide-y divide-slate-200">
-              {editedReceipt.items.map((item, index) => {
-                const categoryName = categories.find(c => c.id === item.categoryId)?.name || 'Unknown';
-                
-                return (
-                  <div key={item.id} className="px-4 py-3 grid grid-cols-12 gap-2 hover:bg-slate-50 transition-colors items-center">
-                    <div className="col-span-4 text-sm font-medium text-slate-900">
-                      {isEditing ? (
-                        <Input
-                          value={item.description}
-                          onChange={(e) => {
-                            const updatedItems = [...editedReceipt.items];
-                            updatedItems[index] = { ...item, description: e.target.value };
-                            setEditedReceipt({ ...editedReceipt, items: updatedItems });
-                          }}
-                          className="text-sm h-8"
-                        />
-                      ) : (
-                        item.description
-                      )}
-                    </div>
-                    <div className="col-span-1 text-center">
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => {
-                            const updatedItems = [...editedReceipt.items];
-                            const qty = parseFloat(e.target.value) || 0;
-                            updatedItems[index] = { 
-                              ...item, 
-                              quantity: qty,
-                              total: qty * item.unitPrice
-                            };
-                            setEditedReceipt({ ...editedReceipt, items: updatedItems });
-                          }}
-                          className="text-sm h-8 text-center"
-                        />
-                      ) : (
-                        <span className="text-sm text-slate-600">×{item.quantity}</span>
-                      )}
-                    </div>
-                    <div className="col-span-2 text-right">
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.unitPrice}
-                          onChange={(e) => {
-                            const updatedItems = [...editedReceipt.items];
-                            const unitPrice = parseFloat(e.target.value) || 0;
-                            updatedItems[index] = { 
-                              ...item, 
-                              unitPrice: unitPrice,
-                              total: item.quantity * unitPrice
-                            };
-                            setEditedReceipt({ ...editedReceipt, items: updatedItems });
-                          }}
-                          className="text-sm h-8 text-right"
-                        />
-                      ) : (
-                        <span className="text-sm text-slate-600">{formatCurrency(item.unitPrice)}</span>
-                      )}
-                    </div>
-                    <div className="col-span-2 text-right">
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.total}
-                          onChange={(e) => {
-                            const updatedItems = [...editedReceipt.items];
-                            updatedItems[index] = { ...item, total: parseFloat(e.target.value) || 0 };
-                            setEditedReceipt({ ...editedReceipt, items: updatedItems });
-                          }}
-                          className="text-sm h-8 text-right font-semibold"
-                        />
-                      ) : (
-                        <span className="text-sm font-semibold text-slate-900">{formatCurrency(item.total)}</span>
-                      )}
-                    </div>
-                    <div className="col-span-3">
-                      {isEditing ? (
-                        <Select
-                          value={item.categoryId}
-                          onChange={(e) => {
-                            const updatedItems = [...editedReceipt.items];
-                            updatedItems[index] = { ...item, categoryId: e.target.value };
-                            setEditedReceipt({ ...editedReceipt, items: updatedItems });
-                          }}
-                          options={categories.map(c => ({ value: c.id, label: c.name }))}
-                          className="text-xs h-8"
-                        />
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
-                          {categoryName}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="rounded-lg border border-slate-200 overflow-x-auto">
+            <table className="w-full min-w-[800px]">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr className="text-xs font-semibold text-slate-600 uppercase">
+                  <th className="px-4 py-2 text-left">Description</th>
+                  <th className="px-4 py-2 text-center w-16">Qty</th>
+                  <th className="px-4 py-2 text-right w-24">Unit</th>
+                  <th className="px-4 py-2 text-right w-24">Total</th>
+                  <th className="px-4 py-2 text-left w-32">Category</th>
+                  <th className="px-4 py-2 text-center w-20">AI Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {editedReceipt.items.map((item, index) => {
+                  const categoryName = categories.find(c => c.id === item.categoryId)?.name || 'Unknown';
+                  const hasAIFlags = item.aiValidationFlags && item.aiValidationFlags.length > 0;
+                  
+                  return (
+                    <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${hasAIFlags ? 'bg-amber-50/30' : ''}`}>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <Input
+                            value={item.description}
+                            onChange={(e) => {
+                              const updatedItems = [...editedReceipt.items];
+                              updatedItems[index] = { ...item, description: e.target.value };
+                              setEditedReceipt({ ...editedReceipt, items: updatedItems });
+                            }}
+                            className="text-sm h-8 w-full"
+                          />
+                        ) : (
+                          <div className="text-sm font-medium text-slate-900">
+                            <div className="break-words">{item.description}</div>
+                            {hasAIFlags && (
+                              <div className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                                <span className="break-words">{item.aiValidationFlags?.join(', ')}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {isEditing ? (
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const updatedItems = [...editedReceipt.items];
+                              const qty = parseFloat(e.target.value) || 0;
+                              updatedItems[index] = { 
+                                ...item, 
+                                quantity: qty,
+                                total: qty * item.unitPrice
+                              };
+                              setEditedReceipt({ ...editedReceipt, items: updatedItems });
+                            }}
+                            className="text-sm h-8 text-center w-full"
+                          />
+                        ) : (
+                          <span className="text-sm text-slate-600">×{item.quantity}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {isEditing ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={(e) => {
+                              const updatedItems = [...editedReceipt.items];
+                              const unitPrice = parseFloat(e.target.value) || 0;
+                              updatedItems[index] = { 
+                                ...item, 
+                                unitPrice: unitPrice,
+                                total: item.quantity * unitPrice
+                              };
+                              setEditedReceipt({ ...editedReceipt, items: updatedItems });
+                            }}
+                            className="text-sm h-8 text-right w-full"
+                          />
+                        ) : (
+                          <span className="text-sm text-slate-600">{formatCurrency(item.unitPrice)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {isEditing ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={item.total}
+                            onChange={(e) => {
+                              const updatedItems = [...editedReceipt.items];
+                              updatedItems[index] = { ...item, total: parseFloat(e.target.value) || 0 };
+                              setEditedReceipt({ ...editedReceipt, items: updatedItems });
+                            }}
+                            className="text-sm h-8 text-right font-semibold w-full"
+                          />
+                        ) : (
+                          <span className="text-sm font-semibold text-slate-900">{formatCurrency(item.total)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <Select
+                            value={item.categoryId}
+                            onChange={(e) => {
+                              const updatedItems = [...editedReceipt.items];
+                              updatedItems[index] = { ...item, categoryId: e.target.value };
+                              setEditedReceipt({ ...editedReceipt, items: updatedItems });
+                            }}
+                            options={categories.map(c => ({ value: c.id, label: c.name }))}
+                            className="text-xs h-8 w-full"
+                          />
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-800 whitespace-nowrap">
+                            {categoryName}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {item.aiConfidence !== undefined ? (
+                          <span 
+                            className={`text-xs font-semibold whitespace-nowrap ${
+                              item.aiConfidence > 0.8 ? 'text-emerald-600' : 
+                              item.aiConfidence > 0.5 ? 'text-amber-600' : 
+                              'text-red-600'
+                            }`}
+                            title={`AI Confidence: ${Math.round(item.aiConfidence * 100)}%`}
+                          >
+                            {Math.round(item.aiConfidence * 100)}%
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -512,7 +583,7 @@ export function UploadedReceiptPreview({
         >
           {receipt.rawText ? (
             <span className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4" />
+              <FileText className="w-4 h-4" />
               Raw OCR Text ({receipt.rawText.split('\n').filter(l => l.trim()).length} lines)
             </span>
           ) : (

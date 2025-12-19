@@ -145,7 +145,14 @@ export default function DashboardPage() {
                     <TD className="text-right font-semibold whitespace-nowrap">{formatCurrency(r.total)}</TD>
                     <TD className="text-center">
                       {r.anomalyFlags.length ? (
-                        <Badge tone="warning">Flagged</Badge>
+                        <a 
+                          href={`/receipts/${r.id}`}
+                          className="inline-block"
+                        >
+                          <Badge tone="warning" className="cursor-pointer hover:bg-amber-600 transition-colors">
+                            Flagged
+                          </Badge>
+                        </a>
                       ) : (
                         <Badge tone="success">OK</Badge>
                       )}

@@ -37,7 +37,7 @@ export function SpendingByCategoryChart({ data }: { data: CategoryData[] }) {
     <Card className="p-4">
       <CardTitle>Spending by category</CardTitle>
       <CardDescription>Total: {data.reduce((sum, d) => sum + d.value, 0).toFixed(2)}€</CardDescription>
-      <div className="mt-4 h-64">
+      <div className="mt-4 h-72">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -45,8 +45,8 @@ export function SpendingByCategoryChart({ data }: { data: CategoryData[] }) {
               cx="50%"
               cy="50%"
               labelLine={false}
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-              outerRadius={80}
+              label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+              outerRadius={70}
               fill="#8884d8"
               dataKey="value"
             >

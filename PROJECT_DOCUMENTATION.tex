@@ -1,0 +1,374 @@
+\documentclass[11pt, a4paper]{report}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{lmodern}
+\usepackage{hyperref}      % For hyperlinks
+\usepackage{graphicx}      % For images
+\usepackage{xcolor}        % For colors
+\usepackage{listings}      % For code snippets
+\usepackage{booktabs}      % For professional tables
+\usepackage{longtable}     % For tables spanning multiple pages
+\usepackage{titlesec}      % Custom section titles
+\usepackage{fancyhdr}      % Custom headers/footers
+\usepackage{fontawesome5}  % For icons (optional)
+\usepackage{tocloft}       % Custom TOC
+\usepackage{parskip}       % Better paragraph spacing
+
+% --- Colors ---
+\definecolor{primaryBlue}{RGB}{0, 51, 102}
+\definecolor{lightGray}{RGB}{245, 245, 245}
+\definecolor{codeGreen}{RGB}{0, 150, 0}
+\definecolor{codePurple}{RGB}{128, 0, 128}
+\definecolor{codeBlue}{RGB}{0, 0, 255}
+
+% --- Code Style ---
+\lstset{
+    backgroundcolor=\color{lightGray},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    captionpos=b,
+    commentstyle=\color{codeGreen},
+    keywordstyle=\color{codeBlue}\bfseries,
+    stringstyle=\color{codePurple},
+    frame=single,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    tabsize=4,
+    language=Python
+}
+
+% --- Hyperlink Setup ---
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primaryBlue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Receipt Budgetizer Documentation},
+    pdfpagemode=FullScreen,
+}
+
+% --- Header/Footer Setup ---
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\leftmark}
+\lhead{Receipt Budgetizer & Scanner}
+\cfoot{\thepage}
+
+% --- Title Page ---
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    {\Huge \textbf{Receipt Budgetizer \& Scanner}}\\[0.5cm]
+    {\Large \textit{Complete Technical Documentation}}\\[2cm]
+    
+    \textbf{Author:} Backend \& Frontend Development Team\\
+    \textbf{Version:} 2.1 (Comprehensive)\\
+    \textbf{Last Updated:} December 16, 2025\\[3cm]
+    
+    \vfill
+    
+    \textbf{Abstract}\\
+    This document provides a comprehensive technical overview of the Receipt Budgetizer application. It details the system architecture, the hybrid AI/Regex parsing engine, the database schema, and the frontend implementation logic. The focus is on explaining the "why" and "how" of the system's design, with minimal code snippets provided only where necessary to illustrate complex logic.
+    
+    \vspace*{2cm}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ==========================================
+% PART 1: BACKEND
+% ==========================================
+\part{Receipt Scanner Backend API}
+
+\chapter{Overview}
+The backend service is a specialized Flask application designed to bridge the gap between raw image data and structured financial information. It leverages Optical Character Recognition (OCR) to read text from images and employs two distinct strategies—Regex Pattern Matching and Artificial Intelligence—to interpret that text.
+
+The system is designed to be stateless and scalable, accepting image uploads via REST API endpoints and returning JSON-formatted data that the frontend can immediately consume and display to the user.
+
+\section*{Technology Stack}
+\begin{itemize}
+    \item \textbf{Flask (Python):} Chosen for its lightweight nature and rich ecosystem of data processing libraries.
+    \item \textbf{PaddleOCR:} An advanced deep learning-based OCR engine that replaced Tesseract. PaddleOCR provides superior text detection with bounding box coordinates, better handling of rotated/skewed receipts, and improved accuracy on low-quality images.
+    \item \textbf{Groq API (LLaMA 3):} Provides the intelligence for the AI parsing mode, capable of understanding complex receipt layouts that regex cannot handle.
+    \item \textbf{Pillow (PIL):} Handles image pre-processing to improve OCR accuracy.
+\end{itemize}
+
+\chapter{Parsing Strategies}
+
+\section{Strategy 1: Regex-Based Parsing}
+This is the default, cost-effective method for parsing receipts. It relies on the fact that most receipts follow a predictable structure: a store name at the top, a date, a list of items with prices, and a total at the bottom.
+
+\subsection{How It Works}
+The system applies a series of regular expressions to the raw text output from PaddleOCR. It looks for "anchors"—specific patterns like currency symbols, date formats (e.g., DD/MM/YYYY), and keywords like "Total" or "Tax".
+
+\textbf{Key Logic:}
+\begin{enumerate}
+    \item \textbf{Line Filtering:} The system iterates through every line of text, discarding noise (empty lines, short separators).
+    \item \textbf{Item Detection:} It looks for lines ending in a number with two decimal places, which typically indicates a price.
+    \item \textbf{Quantity Extraction:} If a line contains patterns like "2 x" or "3 @", the system extracts the quantity and calculates the unit price mathematically.
+\end{enumerate}
+
+\begin{lstlisting}[caption=Core Regex Pattern for Items]
+# Captures description (group 1) and price (group 2) at the end of a line
+item_pattern = re.compile(r'(.*?)\s*[\$]?\s*(\d+[.,]\d{2})$')
+\end{lstlisting}
+
+\section{Strategy 2: AI-Powered Parsing}
+For receipts with complex layouts, crumpled paper, or handwriting, regex often fails. The AI strategy sends the raw OCR text to a Large Language Model (LLM) with a specific set of instructions.
+
+\subsection{Prompt Engineering}
+The success of this method depends entirely on the "System Prompt"—the instructions given to the AI. We use a "One-Shot" prompting technique where we provide the AI with a strict JSON schema it must follow. This ensures the output is always machine-readable.
+
+The prompt explicitly instructs the AI to:
+\begin{itemize}
+    \item Fix OCR typos (e.g., correcting "Wallmart" to "Walmart").
+    \item Infer missing quantities (defaulting to 1).
+    \item Categorize items based on their description context.
+    \item Return strictly valid JSON without any markdown formatting.
+\end{itemize}
+
+\chapter{Core Logic Implementation}
+
+\section{Confidence Scoring}
+To give users an indication of scan quality, the backend calculates a confidence score. PaddleOCR provides a confidence level (0-1) for every detected text region.
+
+The system aggregates these scores by:
+\begin{enumerate}
+    \item Filtering out empty blocks or noise.
+    \item Summing the confidence of all valid text regions.
+    \item Dividing by the total region count to get an average.
+\end{enumerate}
+
+This score is crucial for the "Anomaly Detection" feature in the frontend, where low-confidence scans are flagged for manual review.
+
+\subsection{OCR Bounding Box Data}
+PaddleOCR returns detailed bounding box coordinates for each detected text region. Each bounding box includes:
+\begin{itemize}
+    \item \textbf{Text:} The recognized text string
+    \item \textbf{Confidence:} OCR confidence score (0-1)
+    \item \textbf{Bounding Box:} Four corner coordinates (top-left, top-right, bottom-right, bottom-left) in pixel units
+\end{itemize}
+
+This data enables the frontend to overlay visual annotations on receipt images, helping users verify OCR accuracy by highlighting detected text regions.
+
+\section{AI Categorization}
+Even when using the Regex method, the system can optionally use AI solely for categorization. This is a cost-saving hybrid approach. Instead of asking the AI to parse the whole receipt, the backend extracts just the item descriptions and sends a lightweight list to the AI, asking it to map each description to a fixed list of categories (Groceries, Transport, etc.).
+
+% ==========================================
+% PART 2: FRONTEND / PROJECT
+% ==========================================
+\part{Receipt Budgetizer Project Documentation}
+
+\chapter{Project Overview}
+\textbf{Receipt Budgetizer} is a comprehensive financial management tool built on the Next.js framework. Unlike simple expense trackers, it focuses on the \textit{source} of the data—the receipt itself. By automating data entry through scanning and providing intelligent validation, it bridges the gap between physical spending and digital tracking.
+
+\section{Core Philosophy}
+The application is built around three pillars:
+\begin{enumerate}
+    \item \textbf{Automation:} Minimizing manual data entry through OCR and AI.
+    \item \textbf{Validation:} actively checking data quality to prevent errors from entering the budget.
+    \item \textbf{Insight:} Transforming raw transaction data into actionable budget analytics.
+\end{enumerate}
+
+\chapter{System Architecture}
+
+\section{High-Level Design}
+The application follows a modern serverless architecture using Supabase as a Backend-as-a-Service (BaaS). This allows the frontend to communicate directly with the database and authentication services without a dedicated middleware server for standard CRUD operations.
+
+\subsection{Data Flow}
+\begin{enumerate}
+    \item \textbf{Ingestion:} The user uploads an image. The frontend sends this to the Flask OCR service.
+    \item \textbf{Processing:} The OCR service returns structured JSON data.
+    \item \textbf{Validation:} The frontend runs this data through the AI Validation Engine (client-side) to flag potential errors before saving.
+    \item \textbf{Persistence:} Validated data is saved to Supabase (PostgreSQL). The image is uploaded to Supabase Storage.
+    \item \textbf{Aggregation:} Database triggers or client-side logic updates the budget totals based on the new transaction.
+\end{enumerate}
+
+\section{Database Schema Design}
+The database is normalized to ensure data integrity. Instead of storing everything in one table, data is split into logical entities.
+
+\subsection{Key Entities}
+\begin{itemize}
+    \item \textbf{Receipts:} The parent entity. Stores the store name, date, total amount, and the link to the stored image. It also holds an array of "Anomalies" (flags for duplicates, spikes, etc.). Additionally, the receipt can store OCR metadata including the raw text and bounding box data for visualization purposes.
+    \item \textbf{Receipt Items:} The child entity. Contains individual line items (milk, bread, etc.). Crucially, this table includes \texttt{ai\_validation\_flags} and \texttt{ai\_confidence} columns to store the quality assessment for each specific item.
+    \item \textbf{Budgets:} Links a user, a category, and a month to a specific spending limit. It caches the \texttt{spent\_amount} to avoid expensive recalculations every time the dashboard loads.
+    \item \textbf{Categories:} A master list of expense types (Groceries, Utilities) with associated icons and colors.
+\end{itemize}
+
+\chapter{Feature Implementation Details}
+
+\section{PaddleOCR Integration \& Bounding Box Visualization}
+The application leverages PaddleOCR's advanced capabilities to provide visual feedback on text detection quality. This integration enhances user confidence by making the OCR process transparent and verifiable.
+
+\subsection{Backend OCR Data Structure}
+Both API endpoints (\texttt{/api/scan} and \texttt{/api/scan-ai}) return an \texttt{ocr\_data} array containing:
+
+\begin{lstlisting}[language=Python, caption=OCR Data Structure]
+{
+  "ocr_data": [
+    {
+      "text": "Store Name",
+      "confidence": 0.982,
+      "bounding_box": {
+        "top_left": [45, 120],
+        "top_right": [210, 120],
+        "bottom_right": [210, 145],
+        "bottom_left": [45, 145]
+      }
+    }
+  ]
+}
+\end{lstlisting}
+
+Each entry represents a detected text region with:
+\begin{itemize}
+    \item \textbf{text:} The recognized string
+    \item \textbf{confidence:} OCR accuracy score (0-1 scale)
+    \item \textbf{bounding\_box:} Four corner coordinates forming a polygon (not necessarily rectangular, can handle rotated text)
+\end{itemize}
+
+\subsection{Frontend Visualization Component}
+The \texttt{BoundingBoxCanvas} React component implements an interactive canvas-based visualization:
+
+\textbf{Key Features:}
+\begin{enumerate}
+    \item \textbf{Real-time Rendering:} Uses HTML5 Canvas API to overlay bounding boxes on receipt images without modifying the original image
+    \item \textbf{Interactive Tooltips:} Point-in-polygon algorithm detects mouse hover events, displaying detailed information for each text region
+    \item \textbf{Toggle Visibility:} Users can show/hide bounding boxes with a single click
+    \item \textbf{Color-Coded Confidence:} Automatic visual categorization based on OCR quality
+    \item \textbf{Performance Optimization:} Canvas is redrawn only when necessary (hover state changes, toggle events)
+\end{enumerate}
+
+\textbf{Implementation Architecture:}
+\begin{itemize}
+    \item \textbf{TypeScript Interfaces:} Strongly-typed definitions ensure type safety across the entire data flow
+    \item \textbf{React Hooks:} \texttt{useEffect} manages canvas redrawing when OCR data, image loading state, or interaction state changes
+    \item \textbf{Event Handling:} Mouse movement is transformed into canvas coordinates using scaling factors to handle responsive image sizing
+    \item \textbf{Polygon Rendering:} Bounding boxes are drawn as closed paths using \texttt{Canvas.beginPath()} and \texttt{lineTo()}, supporting non-rectangular shapes for rotated text
+\end{itemize}
+
+\subsection{Integration Points}
+The OCR visualization is integrated in two key locations:
+
+\begin{enumerate}
+    \item \textbf{Receipt Detail View:} Replaces the static image with an interactive canvas, allowing users to audit saved receipts and verify OCR accuracy retroactively
+    \item \textbf{Upload Preview:} Immediately after scanning, users can see which text regions were detected before saving, enabling early error detection
+\end{enumerate}
+
+\subsection{User Benefits}
+\begin{itemize}
+    \item \textbf{Transparency:} Users can see exactly what the OCR engine detected, building trust in the system
+    \item \textbf{Error Detection:} Low-confidence regions are visually highlighted, prompting manual review
+    \item \textbf{Quality Assurance:} Before saving a receipt, users can verify that all critical information (total, date, items) was correctly detected
+    \item \textbf{Debugging Aid:} When parsing fails or produces incorrect results, the bounding boxes reveal whether the issue is OCR-related or parser logic-related
+\end{itemize}
+
+\section{AI Validation System}
+One of the project's most advanced features is the client-side AI Validation System. Before a receipt is saved to the database, the application analyzes the parsed data to detect logical inconsistencies. This is not just checking for empty fields; it performs heuristic analysis.
+
+\subsection{Validation Heuristics}
+The system runs five specific checks on every line item:
+
+\begin{enumerate}
+    \item \textbf{Price Suspicious:} Checks if the price is negative, zero, or statistically improbable (e.g., a single item costing 80\% of the receipt total).
+    \item \textbf{Quantity Unusual:} Flags non-integer quantities (unless unit is kg/lb) or zero/negative quantities.
+    \item \textbf{Description Unclear:} Identifies descriptions that are too short (e.g., "Misc") or contain OCR artifacts.
+    \item \textbf{Calculation Error:} Mathematically verifies that $Quantity \times Unit Price \approx Total Price$. It allows for a small floating-point tolerance (2 cents).
+    \item \textbf{Category Mismatch:} Uses keyword matching to check if an item's assigned category seems contradictory to its description.
+\end{enumerate}
+
+\begin{lstlisting}[caption=Validation Logic Snippet]
+// Example of the calculation check logic
+const expectedTotal = item.quantity * item.unitPrice;
+const tolerance = 0.02; 
+
+if (Math.abs(expectedTotal - item.totalPrice) > tolerance) {
+    flags.push('total_calculation_error');
+    confidenceScore -= 0.25; // Reduce confidence significantly
+}
+\end{lstlisting}
+
+\section{Anomaly Detection Engine}
+While AI Validation checks individual items, the Anomaly Detection Engine looks at the receipt as a whole and its relationship to historical data. This runs during the "Save" process.
+
+\subsection{Detection Rules}
+\begin{itemize}
+    \item \textbf{Duplicate Detection:} Queries the database for existing receipts with the same Store, Date, and Total Amount. If found, the new receipt is flagged as a potential duplicate.
+    \item \textbf{Spending Spikes:} Calculates the user's average spending for similar receipts. If the current total is more than $3\times$ the average, it is flagged as a "Spike".
+    \item \textbf{OCR Mismatch:} If the raw OCR confidence score returned by the backend is below 70\%, the receipt is flagged to warn the user that the text extraction might be unreliable.
+\end{itemize}
+
+\chapter{User Interface & Experience}
+
+\section{Dashboard}
+The dashboard serves as the command center. It is designed to provide immediate situational awareness.
+\begin{itemize}
+    \item \textbf{Stat Widgets:} Show real-time "Remaining Budget" and "Total Spent".
+    \item \textbf{Charts:} A pie chart visualizes spending distribution, while a line chart shows spending trends over the month.
+    \item \textbf{Recent Activity:} A list of the latest receipts, with visual badges indicating any detected anomalies.
+\end{itemize}
+
+\section{Receipt Detail View}
+This is the most complex view in the application, designed for auditing. It features a split-pane layout:
+\begin{itemize}
+    \item \textbf{Left Pane:} Displays the original receipt image with interactive OCR bounding boxes. Users can:
+    \begin{itemize}
+        \item Toggle bounding box visibility on/off
+        \item Hover over detected text regions to see confidence scores
+        \item View color-coded boxes based on OCR confidence (green = high, orange = medium, red = low)
+        \item See a legend showing the total number of detected text regions
+    \end{itemize}
+    \item \textbf{Right Pane:} Shows the extracted data.
+    \item \textbf{Attention Section:} A dedicated, amber-colored section at the top lists any items flagged by the AI Validation System. It explains \textit{why} an item was flagged (e.g., "Price appears suspicious") and suggests a fix.
+\end{itemize}
+
+\subsection{OCR Visualization Technology}
+The frontend uses HTML5 Canvas for high-performance rendering of bounding boxes:
+\begin{itemize}
+    \item \textbf{Interactive Highlighting:} Mouse hover events detect when the cursor enters a bounding box polygon, triggering a tooltip that displays the detected text and confidence percentage.
+    \item \textbf{Color Coding:} Boxes are automatically color-coded based on confidence thresholds:
+    \begin{itemize}
+        \item Green: Confidence $\geq$ 90\% (high quality)
+        \item Orange: Confidence 70-90\% (medium quality)
+        \item Red: Confidence $<$ 70\% (low quality, requires review)
+    \end{itemize}
+    \item \textbf{Performance:} Canvas rendering ensures smooth interaction even with receipts containing 50+ text regions.
+\end{itemize}
+
+\chapter{Setup & Deployment}
+
+\section{Prerequisites}
+To run this project, you need a standard modern web development environment: Node.js (v18+), a Supabase account, and Python (for the OCR service).
+
+\section{Installation Overview}
+\begin{enumerate}
+    \item \textbf{Database Migration:} The most critical step. You must run the SQL scripts provided in the repository to set up the tables and, importantly, the new AI validation columns. Without this, the application cannot persist validation flags.
+    \item \textbf{Environment Variables:} The application requires connection strings for Supabase and API keys for OpenAI/Groq. These are stored in \texttt{.env.local}.
+    \item \textbf{Seeding:} Helper scripts (\texttt{seed-categories.ts}) are provided to populate the database with initial categories, ensuring the app isn't empty upon first launch.
+\end{enumerate}
+
+\chapter{Troubleshooting Guide}
+
+\section{Common Issues}
+
+\subsection{AI Flags Not Saving}
+If you see validation warnings during the scan but they disappear after saving, the database schema is likely outdated.
+\textbf{Solution:} Run the \texttt{add-ai-validation-columns.sql} migration script in the Supabase SQL Editor. This adds the JSONB columns required to store the flags.
+
+\subsection{OCR Service Errors}
+If the upload fails immediately, the Flask backend is likely not running or not reachable.
+\textbf{Solution:} Ensure the Python service is active on port 5000 and that no firewall is blocking the connection.
+
+\subsection{Incorrect Budget Totals}
+If the "Spent" amount in the budget doesn't match the receipts, the aggregation logic might be out of sync.
+\textbf{Solution:} Check that the receipt dates fall strictly within the month defined in the budget. The system filters strictly by the first and last day of the month.
+
+\end{document}

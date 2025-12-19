@@ -1,5 +1,28 @@
 export type AnomalyFlag = "duplicate" | "spike" | "ocr_mismatch" | "tax_mismatch";
 
+// AI validation flags for extracted items
+export type AIValidationFlag = 
+  | "price_suspicious" 
+  | "quantity_unusual" 
+  | "description_unclear" 
+  | "category_mismatch"
+  | "total_calculation_error";
+
+// PaddleOCR bounding box structure
+export interface BoundingBox {
+  top_left: [number, number];      // [x, y]
+  top_right: [number, number];     // [x, y]
+  bottom_right: [number, number];  // [x, y]
+  bottom_left: [number, number];   // [x, y]
+}
+
+// OCR data for each detected text region
+export interface OcrData {
+  text: string;              // Detected text
+  confidence: number;        // 0-1 (e.g., 0.982 = 98.2%)
+  bounding_box: BoundingBox; // Coordinates for drawing boxes
+}
+
 export interface User {
   id: string;
   name: string;
@@ -24,6 +47,8 @@ export interface ReceiptItem {
   unitPrice: number;
   total: number;
   categoryId: string;
+  aiValidationFlags?: AIValidationFlag[]; // AI-detected issues with extracted data
+  aiConfidence?: number; // Confidence score for this specific item (0-1)
 }
 
 export interface Receipt {
@@ -39,6 +64,7 @@ export interface Receipt {
   ocrConfidence: number;
   rawText: string;
   items: ReceiptItem[];
+  ocr_data?: OcrData[]; // PaddleOCR detection results with bounding boxes
 }
 
 export interface DashboardCategoryStat {
@@ -98,6 +124,7 @@ export interface ParsedReceipt {
   rawText: string;
   confidence?: number;
   items: ReceiptItem[];
+  ocr_data?: OcrData[]; // PaddleOCR bounding box data
 }
 
 export interface UploadResult {
